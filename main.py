@@ -3,8 +3,8 @@ import os
 
 modeldir = './model/20180402-114759.pb'
 classifier_filename = './class/classifier.pkl'
-img_path = './test/test8.jpg'
-video_path = './test/test_video3.mp4'
+img_path = './test/test4.jpg'
+video_path = './test/video/test_video3.mp4'
 
 cfy = Classify(modeldir, classifier_filename)
 
@@ -12,7 +12,8 @@ cfy = Classify(modeldir, classifier_filename)
 # cfy.classify_image(img_path)
 
 # classify video
-cfy.classify_video(video_path)
+# cfy.classify_video(video_path)
 
 # classify webcam
-# cfy.classify_webcam()
+cfy.classify_webcam()
+

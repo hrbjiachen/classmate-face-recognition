@@ -8,8 +8,6 @@ import cv2
 from scipy import misc
 from preprocess import PreProcessor
 pp = PreProcessor()
-
-
 class Classify():
     def __init__(self, modeldir, classifier_filename, train_img="./data/train_img"):
         with tf.Graph().as_default():
@@ -106,37 +104,38 @@ class Classify():
 
         if num_faces > 0:
             for i in range(num_faces):
-                emb_array, bb = self.getImageEmbeddings(
-                    frame, bounding_boxes, i)
+                bb, text = self.facenet_predict_proba(frame, bounding_boxes, i)
                 bb_array.append(bb)
-
-                predictions = self.model.predict_proba(emb_array)
-
-                best_class_indices = np.argmax(predictions, axis=1)
-                best_class_probabilities = predictions[np.arange(
-                    len(best_class_indices)), best_class_indices]
-
-                print(predictions)
-                print(best_class_probabilities)
-
-                # calculate position to plot result under box
-                text_x = bb[0]
-                text_y = bb[3] + 20
-                print('Result Indices: ', best_class_indices[0])
-
-                HumanNames = self.HumanNames
-                print(HumanNames)
-
-                if best_class_probabilities > 0.6:
-                    result_names = HumanNames[best_class_indices[0]]
-                else:
-                    result_names = "Undefined"
-
-                text_array.append([result_names, text_x, text_y])
-
+                text_array.append(text)
         else:
             print('Unable to identify face')
         return bb_array, text_array
+
+    def facenet_predict_proba(self, frame, bounding_boxes, face_index):
+        text = []
+        emb_array, bb = self.getImageEmbeddings(frame, bounding_boxes, face_index)
+
+        predictions = self.model.predict_proba(emb_array)
+
+        best_class_indices = np.argmax(predictions, axis=1)
+        best_class_probabilities = predictions[np.arange(
+            len(best_class_indices)), best_class_indices]
+
+        print(predictions)
+        print(best_class_probabilities)
+
+        # calculate position to plot result under box
+        text_x = bb[0]
+        text_y = bb[3] + 20
+        print('Result Indices: ', best_class_indices[0])
+
+        HumanNames = self.HumanNames
+        print(HumanNames)
+
+        if best_class_probabilities > 0.5:
+            result_names = HumanNames[best_class_indices[0]]
+            text = [result_names, text_x, text_y, best_class_probabilities]
+        return bb, text
 
     def show_result_img(self, frame, bb_array, text_array, video=False):
         if frame.ndim == 2:
@@ -148,9 +147,13 @@ class Classify():
                           (bb[2], bb[3]), (0, 255, 0), 2)
 
         for text in text_array:
-            cv2.putText(frame, text[0], (text[1], text[2]), cv2.FONT_HERSHEY_COMPLEX_SMALL,
-                        1, (0, 255, 0), thickness=1, lineType=2)
-
+            if len(text) > 0:
+                prob = np.array2string(text[3], formatter={
+                                       'float_kind': lambda x: "%.2f" % x})
+                cv2.putText(frame, text[0], (text[1], text[2]),
+                            cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), thickness=1, lineType=2)
+                cv2.putText(frame, prob, (text[1], text[2]-25),
+                            cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), thickness=1, lineType=2)
         # show
         if video:
             cv2.imshow('video', frame)
@@ -159,7 +162,7 @@ class Classify():
         else:
             cv2.imshow('image', frame)
             cv2.waitKey(0)
-        
+
         return False
 
     def detect_face(self, img):
@@ -176,21 +179,8 @@ class Classify():
     def getImageEmbeddings(self, frame, bounding_boxes, face_index):
         emb_array = np.zeros((1, self.embedding_size))
 
-        bb = np.zeros(4, dtype=np.int32)
-        det = bounding_boxes[:, 0:4]
+        scaled, bb = self.getCroppedImage(frame, bounding_boxes, face_index)
 
-        bb[0] = det[face_index][0]
-        bb[1] = det[face_index][1]
-        bb[2] = det[face_index][2]
-        bb[3] = det[face_index][3]
-
-        if bb[0] <= 0 or bb[1] <= 0 or bb[2] >= len(frame[0]) or bb[3] >= len(frame):
-            print('face is too close')
-
-        cropped = frame[bb[1]:bb[3], bb[0]:bb[2], :]
-        cropped = facenet.flip(cropped, False)
-        scaled = misc.imresize(
-            cropped, (self.image_size, self.image_size), interp='bilinear')
         scaled = cv2.resize(scaled, (self.image_size, self.image_size),
                             interpolation=cv2.INTER_CUBIC)
         scaled = facenet.prewhiten(scaled)
@@ -201,3 +191,23 @@ class Classify():
         emb_array[0, :] = self.sess.run(self.embeddings, feed_dict=feed_dict)
 
         return emb_array, bb
+
+    def getCroppedImage(self, frame, bounding_boxes, face_index):
+        bb = np.zeros(4, dtype=np.int32)
+        det = bounding_boxes[:, 0:4]
+
+        bb[0] = det[face_index][0] if det[face_index][0] > 0 else 0
+        bb[1] = det[face_index][1] if det[face_index][1] > 0 else 0
+        bb[2] = det[face_index][2] if det[face_index][2] < len(
+            frame[0]) else len(frame[0])
+        bb[3] = det[face_index][3] if det[face_index][3] < len(
+            frame) else len(frame)
+
+        """ if bb[0] <= 0 or bb[1] <= 0 or bb[2] >= len(frame[0]) or bb[3] >= len(frame):
+            print('face is too close') """
+
+        cropped = frame[bb[1]:bb[3], bb[0]:bb[2], :]
+        cropped = facenet.flip(cropped, False)
+        scaled = misc.imresize(
+            cropped, (self.image_size, self.image_size), interp='bilinear')
+        return scaled, bb

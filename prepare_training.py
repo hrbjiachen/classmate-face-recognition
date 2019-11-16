@@ -46,4 +46,4 @@ def processOneFolder(folder_name):
         pp.align(img_path, out_path)
 
 
-processOneFolder('Jason Jia')
+processOneFolder('Ziming Mao')
